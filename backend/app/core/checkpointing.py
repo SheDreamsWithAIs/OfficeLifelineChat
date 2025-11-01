@@ -6,32 +6,37 @@ Documentation Reference: https://docs.langchain.com/oss/python/langgraph/checkpo
 """
 
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.checkpoint import BaseCheckpointSaver
+from typing import Protocol
 
 
-def get_checkpointer() -> BaseCheckpointSaver:
+class CheckpointSaver(Protocol):
+    """Protocol for checkpoint saver implementations."""
+    pass
+
+
+def get_checkpointer() -> MemorySaver:
     """
     Get checkpoint saver for conversation persistence.
     
-    Uses InMemorySaver for development. For production, switch to
+    Uses MemorySaver for development. For production, switch to
     database-backed checkpointers (PostgreSQL, Redis).
     
     Returns:
-        BaseCheckpointSaver: Checkpoint saver instance
+        MemorySaver: Checkpoint saver instance
     """
     return MemorySaver()
 
 
 # Global checkpointer instance
-_checkpointer: BaseCheckpointSaver | None = None
+_checkpointer: MemorySaver | None = None
 
 
-def get_or_create_checkpointer() -> BaseCheckpointSaver:
+def get_or_create_checkpointer() -> MemorySaver:
     """
     Get or create global checkpointer instance.
     
     Returns:
-        BaseCheckpointSaver: Shared checkpointer instance
+        MemorySaver: Shared checkpointer instance
     """
     global _checkpointer
     if _checkpointer is None:
