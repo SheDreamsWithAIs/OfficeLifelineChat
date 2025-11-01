@@ -25,7 +25,10 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(..., description="OpenAI API key")
     
     # AWS Bedrock Configuration (API key authentication)
-    aws_bedrock_api_key: str = Field(..., description="AWS Bedrock API key")
+    aws_bedrock_api_key: Optional[str] = Field(
+        default=None,
+        description="AWS Bedrock API key (optional, required for orchestrator)"
+    )
     
     # ChromaDB Configuration
     chroma_db_path: str = Field(
@@ -57,13 +60,33 @@ class Settings(BaseSettings):
     
     @field_validator("aws_bedrock_api_key")
     @classmethod
-    def validate_bedrock_key(cls, v: str) -> str:
-        """Validate AWS Bedrock API key is not empty."""
-        if not v or v.strip() == "":
-            raise ValueError("AWS_BEDROCK_API_KEY cannot be empty")
+    def validate_bedrock_key(cls, v: Optional[str]) -> Optional[str]:
+        """Validate AWS Bedrock API key if provided."""
+        if v is None:
+            return None
+        v = v.strip()
+        if v == "":
+            return None
         if "your_aws_bedrock_api_key_here" in v.lower():
             raise ValueError("Please set a valid AWS_BEDROCK_API_KEY in .env file")
-        return v.strip()
+        return v
+    
+    def get_bedrock_key(self) -> str:
+        """
+        Get Bedrock API key, raising error if not set.
+        
+        Returns:
+            Bedrock API key string
+            
+        Raises:
+            ValueError: If Bedrock key is not configured
+        """
+        if not self.aws_bedrock_api_key:
+            raise ValueError(
+                "AWS_BEDROCK_API_KEY is required for Bedrock operations. "
+                "Please set it in .env file."
+            )
+        return self.aws_bedrock_api_key
     
     @field_validator("chroma_db_path")
     @classmethod
