@@ -61,7 +61,11 @@ class Settings(BaseSettings):
     @field_validator("aws_bedrock_api_key")
     @classmethod
     def validate_bedrock_key(cls, v: Optional[str]) -> Optional[str]:
-        """Validate AWS Bedrock API key if provided."""
+        """
+        Validate AWS Bedrock API key if provided.
+        
+        Includes checks for common truncation issues.
+        """
         if v is None:
             return None
         v = v.strip()
@@ -69,6 +73,14 @@ class Settings(BaseSettings):
             return None
         if "your_aws_bedrock_api_key_here" in v.lower():
             raise ValueError("Please set a valid AWS_BEDROCK_API_KEY in .env file")
+        
+        # Warn if key seems too short (common truncation issue)
+        if len(v) < 20:
+            raise ValueError(
+                f"AWS_BEDROCK_API_KEY appears truncated (length: {len(v)}). "
+                "Bedrock API keys are typically much longer. Check for line breaks or missing characters."
+            )
+        
         return v
     
     def get_bedrock_key(self) -> str:

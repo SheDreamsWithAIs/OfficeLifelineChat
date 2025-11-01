@@ -46,7 +46,8 @@ def get_bedrock_model(
     """
     Get AWS Bedrock chat model instance.
     
-    Uses API key authentication (not AWS credentials).
+    Uses API key authentication via AWS_BEDROCK_API_KEY environment variable.
+    The API key is set in environment and boto3 will use it automatically.
     
     Args:
         model_id: Bedrock model ID (default: Claude 3 Haiku for fast/cheap routing)
@@ -60,11 +61,20 @@ def get_bedrock_model(
         ValueError: If Bedrock API key is not configured
     """
     settings = get_settings()
-    bedrock_key = settings.get_bedrock_key()
+    bedrock_key = settings.get_bedrock_key()  # Validates key exists
+    
+    # Set API key in environment for boto3 to use
+    # ChatBedrock uses boto3 under the hood, which reads from environment
+    import os
+    os.environ["AWS_BEDROCK_API_KEY"] = bedrock_key
+    
+    # Also set as AWS access key for boto3 compatibility
+    # Note: Some Bedrock API key implementations may require this format
+    os.environ["AWS_ACCESS_KEY_ID"] = bedrock_key
     
     return ChatBedrock(
         model_id=model_id,
-        credentials_profile_name=None,  # Using API key, not profile
+        credentials_profile_name=None,  # Not using profile, using env vars
         region_name="us-east-1",  # Default region, can be configured
         model_kwargs={
             "temperature": temperature,
