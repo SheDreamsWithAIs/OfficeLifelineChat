@@ -46,8 +46,15 @@ def get_bedrock_model(
     """
     Get AWS Bedrock chat model instance.
     
-    Uses API key authentication via AWS_BEDROCK_API_KEY environment variable.
-    The API key is set in environment and boto3 will use it automatically.
+    Uses API key authentication via bearer token injection.
+    Reads API key from .env file or file path (avoids Windows env var truncation).
+    Injects bearer token directly into request headers using boto3 event handlers.
+    
+    NOTE: There is a known issue with boto3's signing mechanism interfering with
+    bearer token authentication. The code implements the correct approach per AWS
+    documentation, but boto3 may still attempt AWS credential signing.
+    
+    See: https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-use.html
     
     Args:
         model_id: Bedrock model ID (default: Claude 3 Haiku for fast/cheap routing)
@@ -60,22 +67,35 @@ def get_bedrock_model(
     Raises:
         ValueError: If Bedrock API key is not configured
     """
+    import boto3
+    from botocore.awsrequest import AWSRequest
+    
+    # Get API key from settings (reads from .env file or file path)
     settings = get_settings()
     bedrock_key = settings.get_bedrock_key()  # Validates key exists
     
-    # Set API key in environment for boto3 to use
-    # ChatBedrock uses boto3 under the hood, which reads from environment
-    import os
-    os.environ["AWS_BEDROCK_API_KEY"] = bedrock_key
+    # Create an Amazon Bedrock client
+    bedrock_client = boto3.client(
+        service_name="bedrock-runtime",
+        region_name="us-east-1"
+    )
     
-    # Also set as AWS access key for boto3 compatibility
-    # Note: Some Bedrock API key implementations may require this format
-    os.environ["AWS_ACCESS_KEY_ID"] = bedrock_key
+    # Inject bearer token directly into request headers (avoids Windows env var truncation)
+    # This follows AWS documentation pattern but avoids os.environ for long keys
+    def inject_bearer_token(request: AWSRequest, **kwargs):
+        """Inject bearer token from .env/file into request headers."""
+        if request.headers is None:
+            request.headers = {}
+        request.headers["Authorization"] = f"Bearer {bedrock_key}"
     
+    # Register the event handler - this runs before each request is sent
+    bedrock_client.meta.events.register('before-send.bedrock-runtime', inject_bearer_token)
+    
+    # ChatBedrock wraps the boto3 client
     return ChatBedrock(
         model_id=model_id,
-        credentials_profile_name=None,  # Not using profile, using env vars
-        region_name="us-east-1",  # Default region, can be configured
+        client=bedrock_client,
+        region_name="us-east-1",
         model_kwargs={
             "temperature": temperature,
         },
@@ -104,15 +124,18 @@ def get_openai_embeddings(
 
 
 # Convenience functions for specific use cases
-def get_routing_model() -> ChatBedrock:
+def get_routing_model() -> ChatOpenAI:
     """
     Get model for routing/orchestration (fast and cost-effective).
     
+    Uses OpenAI gpt-3.5-turbo for routing (smaller/faster than generation model).
+    TODO: Switch to Bedrock Claude 3 Haiku once authentication is resolved.
+    
     Returns:
-        ChatBedrock: Claude 3 Haiku model for routing decisions
+        ChatOpenAI: GPT-3.5-turbo model for routing decisions
     """
-    return get_bedrock_model(
-        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+    return get_openai_model(
+        model_name="gpt-3.5-turbo",
         temperature=0.3  # Lower temperature for more consistent routing
     )
 

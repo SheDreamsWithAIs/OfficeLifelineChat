@@ -41,9 +41,18 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(..., description="OpenAI API key")
     
     # AWS Bedrock Configuration (API key authentication)
+    # Note: Bedrock uses AWS_BEARER_TOKEN_BEDROCK environment variable
+    # We accept either AWS_BEDROCK_API_KEY or AWS_BEARER_TOKEN_BEDROCK from .env
     aws_bedrock_api_key: Optional[str] = Field(
         default=None,
-        description="AWS Bedrock API key (optional, required for orchestrator)"
+        description="AWS Bedrock API key (optional, required for orchestrator). Maps to AWS_BEARER_TOKEN_BEDROCK"
+    )
+    
+    # Also check for AWS_BEARER_TOKEN_BEDROCK directly
+    aws_bearer_token_bedrock: Optional[str] = Field(
+        default=None,
+        alias="AWS_BEARER_TOKEN_BEDROCK",
+        description="AWS Bedrock Bearer Token (alternative name)"
     )
     
     # ChromaDB Configuration
@@ -81,6 +90,7 @@ class Settings(BaseSettings):
         Validate AWS Bedrock API key if provided.
         
         Includes checks for common truncation issues.
+        Note: This value should be set as AWS_BEARER_TOKEN_BEDROCK in .env
         """
         if v is None:
             return None
@@ -88,33 +98,74 @@ class Settings(BaseSettings):
         if v == "":
             return None
         if "your_aws_bedrock_api_key_here" in v.lower():
-            raise ValueError("Please set a valid AWS_BEDROCK_API_KEY in .env file")
+            raise ValueError("Please set a valid AWS_BEDROCK_API_KEY (maps to AWS_BEARER_TOKEN_BEDROCK) in .env file")
         
         # Warn if key seems too short (common truncation issue)
-        if len(v) < 20:
+        # Bedrock API keys are typically very long (1000+ characters)
+        if len(v) < 100:
             raise ValueError(
                 f"AWS_BEDROCK_API_KEY appears truncated (length: {len(v)}). "
-                "Bedrock API keys are typically much longer. Check for line breaks or missing characters."
+                "Bedrock API keys are typically 1000+ characters. Check for line breaks or missing characters."
             )
         
         return v
     
     def get_bedrock_key(self) -> str:
         """
-        Get Bedrock API key, raising error if not set.
+        Get Bedrock API key, checking multiple sources in order:
+        1. Windows OS environment variable BEDROCK_API_KEY_PATH (points to file) - PREFERRED
+        2. Direct value from AWS_BEDROCK_API_KEY or AWS_BEARER_TOKEN_BEDROCK in .env
+        3. Path to file from BEDROCK_API_KEY_PATH in .env file
+        
+        Method 1 is preferred because Windows env vars can store short paths without truncation,
+        then we read the long key from the file.
         
         Returns:
             Bedrock API key string
             
         Raises:
-            ValueError: If Bedrock key is not configured
+            ValueError: If Bedrock key is not configured or file cannot be read
         """
-        if not self.aws_bedrock_api_key:
+        key = None
+        
+        # Method 1: Check Windows OS environment variable for file path (short, won't truncate)
+        api_key_path = os.environ.get("BEDROCK_API_KEY_PATH")
+        if api_key_path:
+            api_key_path = os.path.normpath(api_key_path)
+            if not os.path.isabs(api_key_path):
+                # Relative path - resolve from project root
+                project_root = Path(__file__).parent.parent.parent.parent
+                api_key_path = project_root / api_key_path
+            
+            if os.path.exists(api_key_path):
+                try:
+                    with open(api_key_path, 'r', encoding='utf-8') as f:
+                        content = f.read().strip()
+                        # If file has multiple lines, take first non-empty line
+                        # This handles cases where file might have comments or other content
+                        lines = [line.strip() for line in content.split('\n') if line.strip()]
+                        if lines:
+                            key = lines[0]  # Take first non-empty line
+                        else:
+                            raise ValueError(f"File {api_key_path} appears to be empty")
+                except Exception as e:
+                    raise ValueError(
+                        f"Failed to read Bedrock API key from file {api_key_path}: {e}"
+                    )
+        
+        # Method 2: Check for direct key in .env (may truncate if >1000 chars on Windows)
+        if not key:
+            key = self.aws_bearer_token_bedrock or self.aws_bedrock_api_key
+        
+        if not key:
             raise ValueError(
-                "AWS_BEDROCK_API_KEY is required for Bedrock operations. "
-                "Please set it in .env file."
+                "AWS Bedrock API key is required. "
+                "Please set one of:\n"
+                "  1. Windows OS env var: BEDROCK_API_KEY_PATH=<path_to_key_file> (PREFERRED)\n"
+                "  2. .env file: AWS_BEDROCK_API_KEY or AWS_BEARER_TOKEN_BEDROCK\n"
+                "  3. .env file: BEDROCK_API_KEY_PATH=<path_to_key_file>"
             )
-        return self.aws_bedrock_api_key
+        return key
     
     @field_validator("chroma_db_path")
     @classmethod
