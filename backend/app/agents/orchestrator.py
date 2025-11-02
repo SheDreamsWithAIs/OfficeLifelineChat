@@ -15,10 +15,27 @@ from app.agents.policy_agent import get_policy_agent
 from app.agents.technical_agent import get_technical_agent
 from app.agents.billing_agent import get_billing_agent
 from app.agents.dad_joke_agent import get_dad_joke_agent
+from app.agents.models import PolicyResponse
 from app.core.checkpointing import get_or_create_checkpointer
 
 
 # Wrap worker agents as tools for the supervisor
+def _format_policy_response(structured_response: PolicyResponse) -> str:
+    """Format PolicyResponse structured output into readable markdown."""
+    parts = []
+    if structured_response.friendly_response:
+        parts.append(structured_response.friendly_response)
+    if structured_response.policy_description:
+        parts.append("\n\n" + structured_response.policy_description)
+    if structured_response.key_points:
+        parts.append("\n\n**Key Points:**")
+        for point in structured_response.key_points:
+            parts.append(f"\n- {point}")
+    if structured_response.contact_info:
+        parts.append(f"\n\n**Contact:** {structured_response.contact_info}")
+    return "".join(parts)
+
+
 @tool
 def handle_policy_query(query: str) -> str:
     """
@@ -42,7 +59,15 @@ def handle_policy_query(query: str) -> str:
     result = policy_agent.invoke({
         "messages": [{"role": "user", "content": query}]
     })
-    # Return the final message content from the agent
+    # Check for structured response first
+    if "structured_response" in result and result["structured_response"]:
+        structured_response = result["structured_response"]
+        if isinstance(structured_response, PolicyResponse):
+            formatted = _format_policy_response(structured_response)
+            # Ensure we actually have content (not just empty fields)
+            if formatted.strip():
+                return formatted
+    # Fallback to message content
     return result["messages"][-1].content
 
 
