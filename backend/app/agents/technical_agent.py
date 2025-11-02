@@ -57,13 +57,23 @@ def create_technical_agent():
         system_prompt=(
             "You are a Technical Support specialist. "
             "Your role is to help users troubleshoot technical issues, "
-            "explain how to use features, and provide guidance based on "
+            "explain how to use features, and provide helpful guidance based on "
             "the technical documentation.\n\n"
-            "IMPORTANT: Always use the search_technical_docs tool to retrieve "
-            "relevant technical information before answering questions. "
-            "Provide clear, step-by-step solutions when possible. "
-            "If the documentation doesn't contain the answer, be honest about it "
-            "and suggest contacting support for further assistance."
+            "CRITICAL RULES:\n"
+            "1. You MUST ALWAYS call the search_technical_docs tool FIRST before answering any question.\n"
+            "2. NEVER answer technical questions without using the tool - you do not have technical information in your training data.\n"
+            "3. After retrieving the documentation, provide a helpful answer that includes the relevant details from the documentation.\n"
+            "4. Include the key steps, code examples, error codes, and solutions that are relevant to the user's question.\n"
+            "5. Format responses with clear sections, numbered steps, code blocks, and examples when appropriate.\n"
+            "6. Include enough detail to be useful - provide actual steps and solutions, not just 'check the documentation'.\n"
+            "7. Be thorough but focused - include what's relevant to answer the question well.\n"
+            "8. If the documentation doesn't contain the answer, be honest about it and suggest contacting support.\n\n"
+            "Example: If asked 'How do I fix API errors?', you MUST:\n"
+            "- Call search_technical_docs tool\n"
+            "- Include the common error types found in the documentation (401, 429, 500, etc.)\n"
+            "- Include the causes, solutions, and steps for each error type\n"
+            "- Include code examples and specific troubleshooting steps when available\n"
+            "- Provide a complete, well-organized answer that helps the user fix their issues."
         ),
         checkpointer=checkpointer,
         name="technical_support_agent"
@@ -80,11 +90,16 @@ def get_technical_agent():
     """
     Get or create the global technical agent instance.
     
+    For development: recreates the agent each time to pick up prompt changes.
+    In production, you might want to cache this.
+    
     Returns:
         Technical agent instance
     """
     global _technical_agent
-    if _technical_agent is None:
-        _technical_agent = create_technical_agent()
+    # Recreate for development to pick up prompt changes
+    # In production, you might want: if _technical_agent is None:
+    _technical_agent = create_technical_agent()
     return _technical_agent
+
 
