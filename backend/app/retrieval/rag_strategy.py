@@ -48,32 +48,38 @@ class RAGStrategy:
         Returns:
             List of retrieved document chunk strings formatted for LLM context
         """
-        vectorstore = self._get_vectorstore()
-        num_results = k if k is not None else self.k
-        
-        # Perform similarity search
-        if filter:
-            results = vectorstore.similarity_search(
-                query,
-                k=num_results,
-                filter=filter
-            )
-        else:
-            results = vectorstore.similarity_search(query, k=num_results)
-        
-        # Format results for LLM context
-        formatted_chunks = []
-        for i, doc in enumerate(results, 1):
-            # Include metadata in context for better understanding
-            metadata_info = ""
-            if doc.metadata:
-                source = doc.metadata.get('source_file', 'unknown')
-                metadata_info = f"[Source: {source}]"
+        try:
+            vectorstore = self._get_vectorstore()
+            num_results = k if k is not None else self.k
             
-            chunk_text = f"{metadata_info}\n{doc.page_content}"
-            formatted_chunks.append(chunk_text)
-        
-        return formatted_chunks
+            # Perform similarity search
+            if filter:
+                results = vectorstore.similarity_search(
+                    query,
+                    k=num_results,
+                    filter=filter
+                )
+            else:
+                results = vectorstore.similarity_search(query, k=num_results)
+            
+            # Format results for LLM context
+            formatted_chunks = []
+            for i, doc in enumerate(results, 1):
+                # Include metadata in context for better understanding
+                metadata_info = ""
+                if doc.metadata:
+                    source = doc.metadata.get('source_file', 'unknown')
+                    metadata_info = f"[Source: {source}]"
+                
+                chunk_text = f"{metadata_info}\n{doc.page_content}"
+                formatted_chunks.append(chunk_text)
+            
+            return formatted_chunks
+        except Exception as e:
+            # Handle case where collection doesn't exist or is corrupted
+            # Return empty list so get_context can handle it gracefully
+            print(f"Warning: Error retrieving from collection '{self.collection_name}': {e}")
+            return []
     
     def retrieve_with_scores(self, query: str, k: Optional[int] = None, filter: Optional[dict] = None) -> List[tuple]:
         """

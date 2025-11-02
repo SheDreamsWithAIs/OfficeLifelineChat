@@ -13,6 +13,9 @@ from langchain.tools import tool
 from app.llm.providers import get_generation_model
 from app.retrieval.rag_strategy import RAGStrategy
 from app.core.checkpointing import get_or_create_checkpointer
+from app.core.logging_config import get_logger, log_truncated
+
+logger = get_logger("technical_agent")
 
 
 # Initialize RAG strategy for technical documents
@@ -38,7 +41,11 @@ def search_technical_docs(query: str) -> str:
     Returns:
         Relevant technical documentation chunks from the knowledge base
     """
-    return _rag_strategy.get_context(query)
+    logger.info(f"Technical Agent Tool: Called with query=\"{query}\"")
+    context = _rag_strategy.get_context(query)
+    logger.info(f"Technical Agent Tool: Returned {len(context)} chars of technical content")
+    log_truncated(logger, context, prefix="Technical Agent Tool: Content preview: ", max_chars=200)
+    return context
 
 
 def create_technical_agent():
@@ -59,21 +66,33 @@ def create_technical_agent():
             "Your role is to help users troubleshoot technical issues, "
             "explain how to use features, and provide helpful guidance based on "
             "the technical documentation.\n\n"
-            "CRITICAL RULES:\n"
-            "1. You MUST ALWAYS call the search_technical_docs tool FIRST before answering any question.\n"
-            "2. NEVER answer technical questions without using the tool - you do not have technical information in your training data.\n"
-            "3. After retrieving the documentation, provide a helpful answer that includes the relevant details from the documentation.\n"
-            "4. Include the key steps, code examples, error codes, and solutions that are relevant to the user's question.\n"
-            "5. Format responses with clear sections, numbered steps, code blocks, and examples when appropriate.\n"
-            "6. Include enough detail to be useful - provide actual steps and solutions, not just 'check the documentation'.\n"
-            "7. Be thorough but focused - include what's relevant to answer the question well.\n"
-            "8. If the documentation doesn't contain the answer, be honest about it and suggest contacting support.\n\n"
-            "Example: If asked 'How do I fix API errors?', you MUST:\n"
-            "- Call search_technical_docs tool\n"
-            "- Include the common error types found in the documentation (401, 429, 500, etc.)\n"
-            "- Include the causes, solutions, and steps for each error type\n"
-            "- Include code examples and specific troubleshooting steps when available\n"
-            "- Provide a complete, well-organized answer that helps the user fix their issues."
+            "MANDATORY TOOL USAGE - YOU CANNOT PROCEED WITHOUT CALLING THE TOOL:\n"
+            "1. You MUST call search_technical_docs tool FIRST for EVERY question - NO EXCEPTIONS.\n"
+            "2. You do NOT have access to technical documentation in your training data.\n"
+            "3. If you try to answer without calling the tool, you will provide incorrect or generic information.\n"
+            "4. The tool is the ONLY way to access accurate technical information.\n"
+            "5. NEVER say 'I couldn't find' or 'I don't have access' - you MUST call the tool FIRST.\n\n"
+            "AFTER CALLING THE TOOL:\n"
+            "1. Read the retrieved documentation carefully.\n"
+            "2. Extract the relevant information that answers the user's question.\n"
+            "3. Provide a comprehensive answer that includes:\n"
+            "   - All relevant error types, codes, and their solutions\n"
+            "   - Step-by-step troubleshooting instructions\n"
+            "   - Code examples and snippets when available\n"
+            "   - Specific causes and fixes for each issue\n"
+            "4. Format responses with clear sections, numbered steps, code blocks, and examples.\n"
+            "5. Include enough detail to be useful - provide actual steps and solutions.\n"
+            "6. If the documentation doesn't contain the answer, be honest and suggest contacting support.\n\n"
+            "EXAMPLE WORKFLOW for 'How do I fix API errors?':\n"
+            "Step 1: CALL search_technical_docs(query='API errors')\n"
+            "Step 2: Read the retrieved documentation\n"
+            "Step 3: Provide answer including:\n"
+            "   - All error types found (401, 429, 500, etc.)\n"
+            "   - Causes for each error\n"
+            "   - Specific solutions and steps\n"
+            "   - Code examples if available\n"
+            "   - Complete troubleshooting guide\n\n"
+            "REMEMBER: Tool call FIRST, then answer based on what the tool returns."
         ),
         checkpointer=checkpointer,
         name="technical_support_agent"

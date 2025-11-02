@@ -135,11 +135,25 @@ def handle_technical_query(query: str) -> str:
     Returns:
         Complete answer from the technical support specialist agent
     """
+    logger.info(f"Orchestrator Tool: handle_technical_query called with query=\"{query}\"")
     technical_agent = get_technical_agent()
+    
+    logger.info(f"Technical Agent: Invoking with messages=[{{\"role\": \"user\", \"content\": \"{query}\"}}]")
     result = technical_agent.invoke({
         "messages": [{"role": "user", "content": query}]
     })
+    
+    # Log result structure
+    log_dict_keys(logger, result, prefix="Technical Agent: ")
+    
     # Return the final message content from the agent
+    final_message = result["messages"][-1]
+    logger.info(f"Technical Agent: Returning message content, type={type(final_message)}")
+    if hasattr(final_message, 'content'):
+        content = final_message.content
+        logger.info(f"Technical Agent: Message content length={len(str(content))} chars")
+        log_truncated(logger, content, prefix="Technical Agent: Message content preview: ", max_chars=200)
+    
     return result["messages"][-1].content
 
 
@@ -165,11 +179,25 @@ def handle_billing_query(query: str) -> str:
     Returns:
         Complete answer from the billing support specialist agent
     """
+    logger.info(f"Orchestrator Tool: handle_billing_query called with query=\"{query}\"")
     billing_agent = get_billing_agent()
+    
+    logger.info(f"Billing Agent: Invoking with messages=[{{\"role\": \"user\", \"content\": \"{query}\"}}]")
     result = billing_agent.invoke({
         "messages": [{"role": "user", "content": query}]
     })
+    
+    # Log result structure
+    log_dict_keys(logger, result, prefix="Billing Agent: ")
+    
     # Return the final message content from the agent
+    final_message = result["messages"][-1]
+    logger.info(f"Billing Agent: Returning message content, type={type(final_message)}")
+    if hasattr(final_message, 'content'):
+        content = final_message.content
+        logger.info(f"Billing Agent: Message content length={len(str(content))} chars")
+        log_truncated(logger, content, prefix="Billing Agent: Message content preview: ", max_chars=200)
+    
     return result["messages"][-1].content
 
 
