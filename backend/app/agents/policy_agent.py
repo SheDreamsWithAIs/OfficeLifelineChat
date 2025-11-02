@@ -14,6 +14,9 @@ from app.llm.providers import get_generation_model
 from app.retrieval.cag_strategy import CAGStrategy
 from app.core.checkpointing import get_or_create_checkpointer
 from app.agents.models import PolicyResponse
+from app.core.logging_config import get_logger, log_dict_keys, log_truncated
+
+logger = get_logger("policy_agent")
 
 
 # Initialize CAG strategy for policy documents
@@ -38,7 +41,11 @@ def get_policy_documents(query: str = "") -> str:
     Returns:
         Full content of all policy documents
     """
-    return _cag_strategy.get_context(query)
+    logger.info(f"Policy Agent Tool: Called with query=\"{query}\"")
+    context = _cag_strategy.get_context(query)
+    logger.info(f"Policy Agent Tool: Returned {len(context)} chars of policy content")
+    log_truncated(logger, context, prefix="Policy Agent Tool: Content preview: ", max_chars=200)
+    return context
 
 
 def create_policy_agent():
@@ -48,6 +55,7 @@ def create_policy_agent():
     Returns:
         LangGraph agent configured for policy queries
     """
+    logger.info("Policy Agent: Creating agent with response_format=PolicyResponse")
     model = get_generation_model()
     checkpointer = get_or_create_checkpointer()
     
@@ -106,7 +114,9 @@ def get_policy_agent():
     global _policy_agent
     # Always recreate to pick up prompt changes (or use a cache invalidation strategy)
     # For development, recreate each time; for production, cache and invalidate on config change
+    logger.info("Policy Agent: Getting/creating agent instance")
     _policy_agent = create_policy_agent()
+    logger.info("Policy Agent: Agent instance created successfully")
     return _policy_agent
 
 

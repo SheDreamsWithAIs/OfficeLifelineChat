@@ -17,6 +17,9 @@ from app.agents.billing_agent import get_billing_agent
 from app.agents.dad_joke_agent import get_dad_joke_agent
 from app.agents.models import PolicyResponse
 from app.core.checkpointing import get_or_create_checkpointer
+from app.core.logging_config import get_logger, log_dict_keys, log_truncated
+
+logger = get_logger("orchestrator")
 
 
 # Wrap worker agents as tools for the supervisor
@@ -55,19 +58,60 @@ def handle_policy_query(query: str) -> str:
     Returns:
         Complete answer from the policy specialist agent
     """
+    logger.info(f"Orchestrator Tool: handle_policy_query called with query=\"{query}\"")
     policy_agent = get_policy_agent()
+    
+    logger.info(f"Policy Agent: Invoking with messages=[{{\"role\": \"user\", \"content\": \"{query}\"}}]")
     result = policy_agent.invoke({
         "messages": [{"role": "user", "content": query}]
     })
+    
+    # Log result structure
+    log_dict_keys(logger, result, prefix="Policy Agent: ")
+    
     # Check for structured response first
-    if "structured_response" in result and result["structured_response"]:
+    has_structured = "structured_response" in result and result["structured_response"]
+    logger.info(f"Policy Agent: structured_response present={has_structured}")
+    
+    if has_structured:
         structured_response = result["structured_response"]
+        logger.info(f"Policy Agent: structured_response type={type(structured_response)}")
+        
         if isinstance(structured_response, PolicyResponse):
+            logger.info("Orchestrator Tool: structured_response is PolicyResponse instance")
+            logger.info(f"Orchestrator Tool: structured_response.friendly_response=\"{structured_response.friendly_response}\"")
+            logger.info(f"Orchestrator Tool: structured_response.policy_description length={len(structured_response.policy_description)}")
+            log_truncated(logger, structured_response.policy_description, prefix="Orchestrator Tool: policy_description preview: ", max_chars=200)
+            if structured_response.key_points:
+                logger.info(f"Orchestrator Tool: structured_response.key_points={structured_response.key_points}")
+            if structured_response.contact_info:
+                logger.info(f"Orchestrator Tool: structured_response.contact_info=\"{structured_response.contact_info}\"")
+            
             formatted = _format_policy_response(structured_response)
+            logger.info(f"Orchestrator Tool: Formatted response length={len(formatted)} chars")
+            log_truncated(logger, formatted, prefix="Orchestrator Tool: Formatted response preview: ", max_chars=200)
+            
             # Ensure we actually have content (not just empty fields)
             if formatted.strip():
+                logger.info("Orchestrator Tool: Returning formatted structured response")
                 return formatted
+            else:
+                logger.warning("Orchestrator Tool: Formatted response is empty, falling back to message content")
+        else:
+            logger.warning(f"Orchestrator Tool: structured_response is not PolicyResponse, got {type(structured_response)}")
+    else:
+        logger.info("Orchestrator Tool: No structured_response found, using message content")
+    
     # Fallback to message content
+    final_message = result["messages"][-1]
+    logger.info(f"Orchestrator Tool: Using fallback message content, type={type(final_message)}")
+    if hasattr(final_message, 'content'):
+        content = final_message.content
+        logger.info(f"Orchestrator Tool: Message content length={len(str(content))} chars")
+        log_truncated(logger, content, prefix="Orchestrator Tool: Message content preview: ", max_chars=200)
+    else:
+        logger.warning(f"Orchestrator Tool: Final message has no content attribute: {final_message}")
+    
     return result["messages"][-1].content
 
 

@@ -11,6 +11,9 @@ from fastapi.responses import StreamingResponse
 from app.core.models import ChatRequest, ChatStreamChunk, ErrorResponse
 from app.agents.orchestrator import get_orchestrator
 from app.agents.models import PolicyResponse
+from app.core.logging_config import get_logger, log_dict_keys, log_truncated
+
+logger = get_logger("chat_endpoint")
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -127,22 +130,37 @@ async def chat_endpoint(request: ChatRequest):
         thread_id = request.thread_id or _generate_thread_id()
         config = {"configurable": {"thread_id": thread_id}}
         
+        logger.info(f"Chat Endpoint: Received message=\"{request.message}\", thread_id={thread_id}")
+        
         # Get orchestrator agent
         orchestrator = get_orchestrator()
         
         # Invoke orchestrator with user message
+        logger.info("Chat Endpoint: Invoking orchestrator")
         result = orchestrator.invoke(
             {"messages": [{"role": "user", "content": request.message}]},
             config
         )
         
+        # Log result structure
+        log_dict_keys(logger, result, prefix="Chat Endpoint: Orchestrator result ")
+        
         # Get response - prefer structured response if available
         structured_content = _format_structured_response(result)
+        has_structured = structured_content is not None
+        logger.info(f"Chat Endpoint: Structured response available={has_structured}")
+        
         if structured_content:
+            logger.info(f"Chat Endpoint: Using structured response, length={len(structured_content)} chars")
             response_content = structured_content
         else:
+            logger.info("Chat Endpoint: Using message content (no structured response)")
             response_content = result["messages"][-1].content
+        
+        log_truncated(logger, response_content, prefix="Chat Endpoint: Final response content: ", max_chars=200)
+        
         agent_type = _detect_agent_type(result["messages"])
+        logger.info(f"Chat Endpoint: Detected agent_type={agent_type}")
         
         # Handle streaming vs non-streaming
         if request.stream:
