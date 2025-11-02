@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react'
 
 const suggestionQuestions = [
   "Help with my workload",
-  "Tell me about privacy policy",
+  "Please summarize the privacy policy",
   "How do I fix API errors?",
   "What are your pricing plans?"
 ]

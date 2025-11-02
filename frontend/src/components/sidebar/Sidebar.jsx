@@ -12,7 +12,7 @@ const companyMottos = [
 
 const suggestionQuestions = [
   "Please tell me a joke",
-  "Tell me about privacy policy",
+  "Please summarize the privacy policy",
   "How do I fix API errors?",
   "What are your pricing plans?"
 ]
