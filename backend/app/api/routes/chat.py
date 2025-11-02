@@ -175,46 +175,50 @@ async def chat_endpoint(request: ChatRequest):
         
         # Handle streaming vs non-streaming
         if request.stream:
-            # Stream response using LangChain's native streaming
+            # Stream response - for structured output, get result then stream formatted content
+            # Note: Structured responses aren't streamed by astream(), they're in final state
             async def stream_response() -> AsyncIterator[str]:
                 logger.info("Chat Endpoint: Starting streaming response")
-                agent_type = None
-                accumulated_content = ""
                 
-                # Stream from orchestrator - this yields chunks as they're generated
-                async for chunk in orchestrator.astream(
+                # Get final result (structured responses require invoke to get final state)
+                final_result = orchestrator.invoke(
                     {"messages": [{"role": "user", "content": request.message}]},
                     config
-                ):
-                    # Check if this chunk contains messages
-                    if "messages" in chunk:
-                        messages = chunk["messages"]
-                        if messages:
-                            last_message = messages[-1]
-                            
-                            # Detect agent type from messages if not yet detected
-                            if agent_type is None:
-                                agent_type = _detect_agent_type(messages)
-                                if agent_type:
-                                    logger.info(f"Chat Endpoint: Detected agent_type={agent_type} during streaming")
-                            
-                            # Get content from message if available
-                            if hasattr(last_message, 'content') and last_message.content:
-                                content = str(last_message.content)
-                                # Only send new content (incremental)
-                                if len(content) > len(accumulated_content):
-                                    new_content = content[len(accumulated_content):]
-                                    accumulated_content = content
-                                    
-                                    # Stream the new content character by character for smooth UX
-                                    for char in new_content:
-                                        chunk_data = ChatStreamChunk(
-                                            content=char,
-                                            done=False,
-                                            thread_id=thread_id,
-                                            agent_type=agent_type
-                                        )
-                                        yield f"data: {chunk_data.model_dump_json()}\n\n"
+                )
+                
+                # Check for structured response first
+                structured_content = _format_structured_response(final_result)
+                agent_type = _detect_agent_type(final_result["messages"])
+                
+                if structured_content:
+                    logger.info(f"Chat Endpoint: Streaming structured response, length={len(structured_content)} chars")
+                    # Stream the formatted structured content character by character
+                    # Add small delay between chars for smoother streaming effect
+                    import asyncio
+                    for char in structured_content:
+                        chunk_data = ChatStreamChunk(
+                            content=char,
+                            done=False,
+                            thread_id=thread_id,
+                            agent_type=agent_type
+                        )
+                        yield f"data: {chunk_data.model_dump_json()}\n\n"
+                        # Small delay for smoother streaming (5ms per char ≈ 200 chars/sec)
+                        await asyncio.sleep(0.005)
+                else:
+                    # Fallback: stream message content
+                    logger.info("Chat Endpoint: Streaming message content (no structured response)")
+                    response_content = str(final_result["messages"][-1].content)
+                    import asyncio
+                    for char in response_content:
+                        chunk_data = ChatStreamChunk(
+                            content=char,
+                            done=False,
+                            thread_id=thread_id,
+                            agent_type=agent_type
+                        )
+                        yield f"data: {chunk_data.model_dump_json()}\n\n"
+                        await asyncio.sleep(0.005)
                 
                 # Final chunk with done flag
                 final_chunk = ChatStreamChunk(
@@ -227,7 +231,8 @@ async def chat_endpoint(request: ChatRequest):
                 
                 # Final signal
                 yield "data: [DONE]\n\n"
-                logger.info(f"Chat Endpoint: Streaming complete, total length={len(accumulated_content)} chars")
+                total_length = len(structured_content or str(final_result["messages"][-1].content))
+                logger.info(f"Chat Endpoint: Streaming complete, total length={total_length} chars")
             
             return StreamingResponse(
                 stream_response(),
