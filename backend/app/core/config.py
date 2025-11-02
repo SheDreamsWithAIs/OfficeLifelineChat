@@ -6,16 +6,32 @@ Documentation Reference: https://docs.langchain.com/
 """
 
 import os
+from pathlib import Path
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
+
+
+def find_env_file() -> str:
+    """
+    Find .env file in project root (parent of backend/).
+    
+    Returns:
+        Path to .env file
+    """
+    # Get backend directory (where this file is)
+    backend_dir = Path(__file__).parent.parent.parent
+    # Go up to project root
+    project_root = backend_dir.parent
+    env_path = project_root / ".env"
+    return str(env_path)
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=find_env_file(),  # Look for .env in project root
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore"
