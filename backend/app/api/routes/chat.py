@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from app.core.models import ChatRequest, ChatStreamChunk, ErrorResponse
 from app.agents.orchestrator import get_orchestrator
-from app.agents.models import PolicyResponse
+from app.agents.models import PolicyResponse, TechnicalResponse, BillingResponse
 from app.core.logging_config import get_logger, log_dict_keys, log_truncated
 
 logger = get_logger("chat_endpoint")
@@ -50,6 +50,44 @@ def _format_structured_response(result: dict) -> str:
                 parts.append(f"\n- {point}")
         if structured_response.contact_info:
             parts.append(f"\n\n**Contact:** {structured_response.contact_info}")
+        return "".join(parts)
+    
+    if isinstance(structured_response, TechnicalResponse):
+        parts = []
+        if structured_response.friendly_response:
+            parts.append(structured_response.friendly_response)
+        if structured_response.technical_description:
+            parts.append("\n\n" + structured_response.technical_description)
+        if structured_response.steps:
+            parts.append("\n\n**Steps:**")
+            for i, step in enumerate(structured_response.steps, 1):
+                parts.append(f"\n{i}. {step}")
+        if structured_response.code_examples:
+            parts.append("\n\n**Code Examples:**")
+            for example in structured_response.code_examples:
+                parts.append(f"\n```\n{example}\n```")
+        if structured_response.error_codes:
+            parts.append("\n\n**Error Codes:**")
+            for error in structured_response.error_codes:
+                parts.append(f"\n- {error}")
+        return "".join(parts)
+    
+    if isinstance(structured_response, BillingResponse):
+        parts = []
+        if structured_response.friendly_response:
+            parts.append(structured_response.friendly_response)
+        if structured_response.billing_description:
+            parts.append("\n\n" + structured_response.billing_description)
+        if structured_response.plans:
+            parts.append("\n\n**Available Plans:**")
+            for plan in structured_response.plans:
+                if isinstance(plan, dict):
+                    plan_str = "\n".join(f"- {k}: {v}" for k, v in plan.items())
+                    parts.append(f"\n{plan_str}")
+                else:
+                    parts.append(f"\n- {plan}")
+        if structured_response.payment_info:
+            parts.append(f"\n\n**Payment Information:**\n{structured_response.payment_info}")
         return "".join(parts)
     
     # For other structured response types, convert to JSON or string
@@ -135,54 +173,61 @@ async def chat_endpoint(request: ChatRequest):
         # Get orchestrator agent
         orchestrator = get_orchestrator()
         
-        # Invoke orchestrator with user message
-        logger.info("Chat Endpoint: Invoking orchestrator")
-        result = orchestrator.invoke(
-            {"messages": [{"role": "user", "content": request.message}]},
-            config
-        )
-        
-        # Log result structure
-        log_dict_keys(logger, result, prefix="Chat Endpoint: Orchestrator result ")
-        
-        # Get response - prefer structured response if available
-        structured_content = _format_structured_response(result)
-        has_structured = structured_content is not None
-        logger.info(f"Chat Endpoint: Structured response available={has_structured}")
-        
-        if structured_content:
-            logger.info(f"Chat Endpoint: Using structured response, length={len(structured_content)} chars")
-            response_content = structured_content
-        else:
-            logger.info("Chat Endpoint: Using message content (no structured response)")
-            response_content = result["messages"][-1].content
-        
-        log_truncated(logger, response_content, prefix="Chat Endpoint: Final response content: ", max_chars=200)
-        
-        agent_type = _detect_agent_type(result["messages"])
-        logger.info(f"Chat Endpoint: Detected agent_type={agent_type}")
-        
         # Handle streaming vs non-streaming
         if request.stream:
-            # Return streaming response
+            # Stream response using LangChain's native streaming
             async def stream_response() -> AsyncIterator[str]:
-                # Stream response in chunks (word-based chunking for simplicity)
-                # In production, you might want to use LangChain's native streaming
-                words = response_content.split()
-                total_words = len(words)
+                logger.info("Chat Endpoint: Starting streaming response")
+                agent_type = None
+                accumulated_content = ""
                 
-                for i, word in enumerate(words):
-                    is_last = (i == total_words - 1)
-                    chunk = ChatStreamChunk(
-                        content=word + (" " if not is_last else ""),
-                        done=is_last,
-                        thread_id=thread_id,  # Include in all chunks for consistency
-                        agent_type=agent_type  # Include in all chunks for consistency
-                    )
-                    yield f"data: {chunk.model_dump_json()}\n\n"
+                # Stream from orchestrator - this yields chunks as they're generated
+                async for chunk in orchestrator.astream(
+                    {"messages": [{"role": "user", "content": request.message}]},
+                    config
+                ):
+                    # Check if this chunk contains messages
+                    if "messages" in chunk:
+                        messages = chunk["messages"]
+                        if messages:
+                            last_message = messages[-1]
+                            
+                            # Detect agent type from messages if not yet detected
+                            if agent_type is None:
+                                agent_type = _detect_agent_type(messages)
+                                if agent_type:
+                                    logger.info(f"Chat Endpoint: Detected agent_type={agent_type} during streaming")
+                            
+                            # Get content from message if available
+                            if hasattr(last_message, 'content') and last_message.content:
+                                content = str(last_message.content)
+                                # Only send new content (incremental)
+                                if len(content) > len(accumulated_content):
+                                    new_content = content[len(accumulated_content):]
+                                    accumulated_content = content
+                                    
+                                    # Stream the new content character by character for smooth UX
+                                    for char in new_content:
+                                        chunk_data = ChatStreamChunk(
+                                            content=char,
+                                            done=False,
+                                            thread_id=thread_id,
+                                            agent_type=agent_type
+                                        )
+                                        yield f"data: {chunk_data.model_dump_json()}\n\n"
                 
-                # Final signal to indicate completion
+                # Final chunk with done flag
+                final_chunk = ChatStreamChunk(
+                    content="",
+                    done=True,
+                    thread_id=thread_id,
+                    agent_type=agent_type
+                )
+                yield f"data: {final_chunk.model_dump_json()}\n\n"
+                
+                # Final signal
                 yield "data: [DONE]\n\n"
+                logger.info(f"Chat Endpoint: Streaming complete, total length={len(accumulated_content)} chars")
             
             return StreamingResponse(
                 stream_response(),
@@ -193,6 +238,33 @@ async def chat_endpoint(request: ChatRequest):
                 }
             )
         else:
+            # Non-streaming: invoke orchestrator
+            logger.info("Chat Endpoint: Invoking orchestrator (non-streaming)")
+            result = orchestrator.invoke(
+                {"messages": [{"role": "user", "content": request.message}]},
+                config
+            )
+            
+            # Log result structure
+            log_dict_keys(logger, result, prefix="Chat Endpoint: Orchestrator result ")
+            
+            # Get response - prefer structured response if available
+            structured_content = _format_structured_response(result)
+            has_structured = structured_content is not None
+            logger.info(f"Chat Endpoint: Structured response available={has_structured}")
+            
+            if structured_content:
+                logger.info(f"Chat Endpoint: Using structured response, length={len(structured_content)} chars")
+                response_content = structured_content
+            else:
+                logger.info("Chat Endpoint: Using message content (no structured response)")
+                response_content = result["messages"][-1].content
+            
+            log_truncated(logger, response_content, prefix="Chat Endpoint: Final response content: ", max_chars=200)
+            
+            agent_type = _detect_agent_type(result["messages"])
+            logger.info(f"Chat Endpoint: Detected agent_type={agent_type}")
+            
             # Return non-streaming response
             from app.core.models import ChatResponse
             return ChatResponse(
