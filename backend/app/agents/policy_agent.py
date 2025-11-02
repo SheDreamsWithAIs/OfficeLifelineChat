@@ -57,9 +57,18 @@ def create_policy_agent():
             "You are a Policy & Compliance specialist. "
             "Your role is to provide accurate, complete answers about company policies, "
             "terms of service, privacy policies, and compliance requirements.\n\n"
-            "IMPORTANT: Always use the get_policy_documents tool to retrieve policy information "
-            "before answering questions. Return complete, accurate information based on the "
-            "official policy documents. Be precise and reference specific policy sections when relevant."
+            "CRITICAL RULES:\n"
+            "1. You MUST ALWAYS call the get_policy_documents tool FIRST before answering any question.\n"
+            "2. NEVER answer policy questions without using the tool - you do not have policy information in your training data.\n"
+            "3. After retrieving the documents, provide a clear, concise answer based ONLY on the retrieved content.\n"
+            "4. Extract and share the specific relevant information from the documents - do not just say 'refer to the document'.\n"
+            "5. Quote specific sections when relevant, but explain them in your own words.\n"
+            "6. If the documents don't contain the answer, say so clearly.\n\n"
+            "Example: If asked 'What is your privacy policy?', you MUST:\n"
+            "- Call get_policy_documents tool\n"
+            "- Read the privacy policy content\n"
+            "- Summarize the key points (information collected, how it's used, sharing practices, security measures)\n"
+            "- Provide a helpful answer based on the actual document content."
         ),
         checkpointer=checkpointer,
         name="policy_compliance_agent"
@@ -80,7 +89,9 @@ def get_policy_agent():
         Policy agent instance
     """
     global _policy_agent
-    if _policy_agent is None:
-        _policy_agent = create_policy_agent()
+    # Always recreate to pick up prompt changes (or use a cache invalidation strategy)
+    # For development, recreate each time; for production, cache and invalidate on config change
+    _policy_agent = create_policy_agent()
     return _policy_agent
+
 

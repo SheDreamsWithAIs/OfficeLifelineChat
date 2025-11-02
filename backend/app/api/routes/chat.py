@@ -29,31 +29,46 @@ def _detect_agent_type(messages: list) -> str:
     Returns:
         Agent type string (policy, technical, billing, dad_joke) or None
     """
-    # Look for tool calls in messages
-    for msg in messages:
+    # Look for tool calls in messages (reverse order to get most recent)
+    for msg in reversed(messages):
         # Check if message has tool_calls attribute (OpenAI format)
         if hasattr(msg, 'tool_calls') and msg.tool_calls:
             for tool_call in msg.tool_calls:
                 tool_name = tool_call.get('name', '').lower()
-                if 'policy' in tool_name:
+                # Exact match first, then substring match
+                if 'handle_policy_query' in tool_name or ('policy' in tool_name and 'query' in tool_name):
                     return "policy"
-                elif 'technical' in tool_name:
+                elif 'handle_technical_query' in tool_name or ('technical' in tool_name and 'query' in tool_name):
                     return "technical"
-                elif 'billing' in tool_name:
+                elif 'handle_billing_query' in tool_name or ('billing' in tool_name and 'query' in tool_name):
                     return "billing"
-                elif 'dad_joke' in tool_name or 'joke' in tool_name:
+                elif 'handle_dad_joke' in tool_name or 'dad_joke' in tool_name:
                     return "dad_joke"
         
-        # Check message content for tool usage hints
-        if hasattr(msg, 'content') and msg.content:
-            content_lower = str(msg.content).lower()
-            if 'handle_policy_query' in content_lower or 'policy' in content_lower:
+        # Check if this is a ToolMessage - they contain the tool name in metadata
+        if hasattr(msg, 'name') and msg.name:
+            tool_name = msg.name.lower()
+            if 'handle_policy_query' in tool_name:
                 return "policy"
-            elif 'handle_technical_query' in content_lower or 'technical' in content_lower:
+            elif 'handle_technical_query' in tool_name:
                 return "technical"
-            elif 'handle_billing_query' in content_lower or 'billing' in content_lower:
+            elif 'handle_billing_query' in tool_name:
                 return "billing"
-            elif 'handle_dad_joke' in content_lower or 'dad_joke' in content_lower:
+            elif 'handle_dad_joke' in tool_name:
+                return "dad_joke"
+    
+    # Fallback: Check message content for explicit tool function names (not keywords)
+    for msg in reversed(messages):
+        if hasattr(msg, 'content') and msg.content:
+            content = str(msg.content)
+            # Only check for exact tool function names, not keywords
+            if 'handle_policy_query' in content:
+                return "policy"
+            elif 'handle_technical_query' in content:
+                return "technical"
+            elif 'handle_billing_query' in content:
+                return "billing"
+            elif 'handle_dad_joke_request' in content:
                 return "dad_joke"
     
     return None

@@ -80,13 +80,15 @@ def handle_billing_query(query: str) -> str:
     Handle billing, pricing, invoices, and payment questions.
     
     Use this tool when users ask about:
-    - Pricing and plans
-    - Invoice questions
-    - Payment methods
-    - Billing cycles
-    - Refunds and cancellations
-    - Account billing history
-    - Subscription management
+    - Pricing and plans (e.g., "what are your pricing plans", "how much does it cost", "pricing")
+    - Invoice questions (e.g., "invoice", "billing statement")
+    - Payment methods (e.g., "how do I pay", "payment options")
+    - Billing cycles (e.g., "when am I billed", "billing frequency")
+    - Refunds and cancellations (e.g., "refund", "cancel subscription")
+    - Account billing history (e.g., "billing history", "past invoices")
+    - Subscription management (e.g., "change plan", "upgrade", "downgrade")
+    
+    Keywords that indicate billing: pricing, price, cost, plan, payment, invoice, billing, subscription, refund, cancel, upgrade, downgrade
     
     Args:
         query: User's billing question
@@ -105,17 +107,22 @@ def handle_billing_query(query: str) -> str:
 @tool
 def handle_dad_joke_request(query: str) -> str:
     """
-    Handle requests for jokes, dad jokes, humor, or emotional support through comedy.
+    Handle EXPLICIT requests for jokes, dad jokes, or humor.
     
-    Use this tool when users:
-    - Ask for a joke, dad joke, or something funny
-    - Request humor or need a mood lift
-    - Express stress, overwhelm, or need for levity
-    - Say things like "tell me a joke", "I need something funny", "make me laugh"
-    - Seem like they need emotional support through humor
+    Use this tool ONLY when users EXPLICITLY request humor:
+    - Directly ask for a joke: "tell me a joke", "give me a dad joke", "make me laugh", "tell me something funny"
+    - Use humor-related keywords: "joke", "funny", "humor", "dad joke", "something funny", "cheer me up"
+    - Explicitly request emotional support through comedy: "I need a joke", "cheer me up with a joke"
+    
+    Keywords that indicate joke requests: joke, jokes, funny, humor, humour, laugh, dad joke, cheer me up, make me laugh
+    
+    DO NOT use this tool for:
+    - General questions even if user seems stressed (they might want actual help)
+    - Technical, billing, or policy questions (route to appropriate specialist)
+    - Questions that don't explicitly mention jokes or humor
     
     Args:
-        query: User's request for humor or joke
+        query: User's EXPLICIT request for humor or joke
         
     Returns:
         A contextually relevant dad joke from the dad joke specialist agent
@@ -147,21 +154,32 @@ def create_orchestrator():
         tools=[handle_policy_query, handle_technical_query, handle_billing_query, handle_dad_joke_request],
         system_prompt=(
             "You are an intelligent customer service orchestrator. "
-            "Your role is to analyze user queries and route them to the appropriate "
-            "specialist agent.\n\n"
-            "Available specialist agents:\n"
+            "Your role is to analyze EACH user query independently and route it to the appropriate "
+            "specialist agent by CALLING THE APPROPRIATE TOOL.\n\n"
+            "Available specialist agents (TOOLS YOU MUST CALL):\n"
             "1. handle_policy_query - For policy, compliance, terms of service, privacy policy questions\n"
             "2. handle_technical_query - For technical support, API, troubleshooting, setup questions\n"
             "3. handle_billing_query - For billing, pricing, invoices, payment questions\n"
-            "4. handle_dad_joke_request - For jokes, humor, emotional support, or when users need a mood lift\n\n"
-            "ROUTING RULES:\n"
-            "- If the user asks for a joke, dad joke, humor, or something funny → ALWAYS use handle_dad_joke_request\n"
-            "- If the user seems stressed, overwhelmed, or needs emotional support → use handle_dad_joke_request\n"
-            "- Keywords that indicate joke requests: 'joke', 'funny', 'humor', 'dad joke', 'make me laugh', 'something funny'\n"
-            "- For all other queries, analyze the content and route to the appropriate specialist\n"
-            "- Call ONLY ONE agent per query\n"
-            "- Return the agent's response directly to the user\n"
-            "- Be concise in your routing decisions"
+            "4. handle_dad_joke_request - ONLY for EXPLICIT requests for jokes, humor, or dad jokes\n\n"
+            "CRITICAL ROUTING RULES:\n"
+            "- You MUST ALWAYS call one of the tools above - NEVER respond without calling a tool\n"
+            "- DO NOT say 'I have routed' or 'I will route' - just CALL the tool and return its response\n"
+            "- Evaluate EACH query independently - do NOT assume the previous query determines the current one\n\n"
+            "ROUTING DECISION LOGIC (in priority order):\n"
+            "1. If query contains joke/humor keywords ('joke', 'funny', 'humor', 'laugh', 'dad joke') → handle_dad_joke_request\n"
+            "2. If query contains billing keywords ('pricing', 'price', 'cost', 'plan', 'payment', 'invoice', 'billing', 'subscription', 'refund', 'cancel') → handle_billing_query\n"
+            "3. If query contains policy keywords ('privacy policy', 'terms of service', 'policy', 'compliance', 'terms') → handle_policy_query\n"
+            "4. If query contains technical keywords ('API', 'error', 'bug', 'troubleshoot', 'fix', 'how to', 'technical', 'setup', 'configuration') → handle_technical_query\n"
+            "5. For general questions without specific keywords, use handle_technical_query as default\n\n"
+            "EXAMPLES:\n"
+            "- 'tell me a joke' → handle_dad_joke_request\n"
+            "- 'what are your pricing plans' → handle_billing_query\n"
+            "- 'what is your privacy policy' → handle_policy_query\n"
+            "- 'how do I fix API errors' → handle_technical_query\n\n"
+            "- Call ONLY ONE tool per query\n"
+            "- After calling a tool, return the tool's response DIRECTLY to the user as-is\n"
+            "- DO NOT add your own commentary - just return what the tool returned\n"
+            "- Be precise: each new query should be evaluated on its own merits, not based on conversation history"
         ),
         checkpointer=checkpointer,
         name="orchestrator_agent"
@@ -178,11 +196,15 @@ def get_orchestrator():
     """
     Get or create the global orchestrator instance.
     
+    For development: recreates the agent each time to pick up prompt changes.
+    In production, you might want to cache this.
+    
     Returns:
         Orchestrator agent instance
     """
     global _orchestrator
-    if _orchestrator is None:
-        _orchestrator = create_orchestrator()
+    # Recreate for development to pick up prompt/routing changes
+    # In production, you might want: if _orchestrator is None:
+    _orchestrator = create_orchestrator()
     return _orchestrator
 

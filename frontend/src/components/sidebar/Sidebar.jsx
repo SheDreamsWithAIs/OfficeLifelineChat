@@ -11,7 +11,7 @@ const companyMottos = [
 ]
 
 const suggestionQuestions = [
-  "Help with my workload",
+  "Please tell me a joke",
   "Tell me about privacy policy",
   "How do I fix API errors?",
   "What are your pricing plans?"
@@ -64,10 +64,10 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen, clearChat, onSugg
             <div className="space-y-2">
               <button
                 onClick={clearChat}
-                className="w-full flex items-center gap-3 p-3 text-sm text-gray-700 hover:bg-gradient-to-r hover:from-cyan-50 hover:to-purple-50 rounded-lg transition border-2 border-cyan-200 hover:border-purple-300"
+                className="w-full flex items-center gap-3 p-3 text-sm text-gray-700 hover:bg-gradient-to-r hover:from-cyan-50 hover:to-purple-50 rounded-lg transition border-2 border-cyan-200 hover:border-purple-300 font-semibold"
               >
                 <RotateCcw className="w-4 h-4" />
-                Fresh Start Support Session
+                Start a New Chat
               </button>
               <button className="w-full flex items-center gap-3 p-3 text-sm text-gray-700 hover:bg-gradient-to-r hover:from-pink-50 hover:to-purple-50 rounded-lg transition border-2 border-pink-200 hover:border-purple-300">
                 <HelpCircle className="w-4 h-4" />
