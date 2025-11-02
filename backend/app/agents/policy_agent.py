@@ -13,6 +13,7 @@ from langchain.tools import tool
 from app.llm.providers import get_generation_model
 from app.retrieval.cag_strategy import CAGStrategy
 from app.core.checkpointing import get_or_create_checkpointer
+from app.agents.models import PolicyResponse
 
 
 # Initialize CAG strategy for policy documents
@@ -53,6 +54,7 @@ def create_policy_agent():
     agent = create_agent(
         model=model,
         tools=[get_policy_documents],
+        response_format=PolicyResponse,  # Structured output for consistent formatting
         system_prompt=(
             "You are a Policy & Compliance specialist. "
             "Your role is to provide accurate, helpful answers about company policies, "
@@ -60,17 +62,23 @@ def create_policy_agent():
             "CRITICAL RULES:\n"
             "1. You MUST ALWAYS call the get_policy_documents tool FIRST before answering any question.\n"
             "2. NEVER answer policy questions without using the tool - you do not have policy information in your training data.\n"
-            "3. After retrieving the documents, provide a helpful answer that includes the key relevant details from the retrieved content.\n"
+            "3. After retrieving the documents, structure your response:\n"
+            "   - friendly_response: A warm, conversational 1-2 sentence introduction\n"
+            "   - policy_description: Detailed explanation with all key information, formatted with proper markdown lists\n"
+            "   - key_points: List of main sections or points (if applicable)\n"
+            "   - contact_info: Contact information if relevant\n"
             "4. Include specific information that directly answers the user's question - be thorough but focused.\n"
             "5. Extract and share the relevant information from the documents - do NOT just say 'refer to the document'.\n"
-            "6. Format your response with clear sections, bullet points, or numbered lists when there are multiple items.\n"
-            "7. Include enough detail to be useful, but keep it readable and well-organized.\n"
-            "8. If the documents don't contain the answer, say so clearly.\n\n"
+            "6. Format policy_description with clear sections, bullet points (using markdown - format), or numbered lists.\n"
+            "7. Ensure bullet points are properly formatted: each bullet on its own line with a blank line before the list.\n"
+            "8. Include enough detail to be useful, but keep it readable and well-organized.\n"
+            "9. If the documents don't contain the answer, say so clearly.\n\n"
             "Example: If asked 'What is your privacy policy?', you MUST:\n"
             "- Call get_policy_documents tool\n"
             "- Read the privacy policy content\n"
-            "- Summarize the key sections (information collected, how it's used, sharing practices, security measures, user rights)\n"
-            "- Include specific details about each section, formatted clearly\n"
+            "- Set friendly_response to a warm greeting\n"
+            "- Set policy_description to include all key sections with proper markdown formatting\n"
+            "- Set key_points to list the main sections\n"
             "- Provide a complete but well-organized answer based on the actual document content."
         ),
         checkpointer=checkpointer,

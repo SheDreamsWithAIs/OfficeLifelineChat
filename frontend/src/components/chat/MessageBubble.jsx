@@ -75,6 +75,9 @@ function formatContentForMarkdown(content) {
     
     // Check if this line starts with a dash (potential list item)
     if (trimmed.match(/^[-•]\s+/)) {
+      // Check if the bullet item has content on the same line or is standalone
+      const bulletContent = trimmed.replace(/^[-•]\s+/, '')
+      
       // If previous line exists and isn't empty and isn't already a list item, add blank line
       if (i > 0 && formattedLines.length > 0) {
         const prevLine = formattedLines[formattedLines.length - 1]
@@ -84,13 +87,39 @@ function formatContentForMarkdown(content) {
           formattedLines.push('')
         }
       }
+      
+      // If bullet has content, ensure it's on the same line (not split)
       formattedLines.push(line)
     } else {
       formattedLines.push(line)
     }
   }
   
-  return formattedLines.join('\n')
+  // Post-process: ensure bullets with descriptions stay together
+  // If we have a bullet line followed by a non-empty line that doesn't start with bullet,
+  // and the bullet line ends with ":", it's likely a header - keep them together
+  let finalLines = []
+  for (let i = 0; i < formattedLines.length; i++) {
+    const line = formattedLines[i]
+    const trimmed = line.trim()
+    
+    if (trimmed.match(/^[-•]\s+.*:$/) && i + 1 < formattedLines.length) {
+      // This is a bullet header ending with ":"
+      const nextLine = formattedLines[i + 1]
+      const nextTrimmed = nextLine.trim()
+      
+      // If next line is not empty and not a bullet, it's likely continuation
+      if (nextTrimmed && !nextTrimmed.match(/^[-•]\s+/) && !nextTrimmed.match(/^#/)) {
+        // Keep together - don't add extra blank line
+        finalLines.push(line)
+        continue
+      }
+    }
+    
+    finalLines.push(line)
+  }
+  
+  return finalLines.join('\n')
 }
 
 export default function MessageBubble({ message }) {
