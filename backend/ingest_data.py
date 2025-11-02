@@ -147,7 +147,8 @@ def main():
     domains = {
         'billing': 'billing_documents',
         'technical': 'technical_documents',
-        'policy': 'policy_documents'
+        'policy': 'policy_documents',
+        'dad_jokes': 'dad_jokes_documents'
     }
     
     total_chunks = 0

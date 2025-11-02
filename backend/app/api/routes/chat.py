@@ -27,7 +27,7 @@ def _detect_agent_type(messages: list) -> str:
         messages: List of messages from agent response
         
     Returns:
-        Agent type string (policy, technical, billing) or None
+        Agent type string (policy, technical, billing, dad_joke) or None
     """
     # Look for tool calls in messages
     for msg in messages:
@@ -41,6 +41,8 @@ def _detect_agent_type(messages: list) -> str:
                     return "technical"
                 elif 'billing' in tool_name:
                     return "billing"
+                elif 'dad_joke' in tool_name or 'joke' in tool_name:
+                    return "dad_joke"
         
         # Check message content for tool usage hints
         if hasattr(msg, 'content') and msg.content:
@@ -51,6 +53,8 @@ def _detect_agent_type(messages: list) -> str:
                 return "technical"
             elif 'handle_billing_query' in content_lower or 'billing' in content_lower:
                 return "billing"
+            elif 'handle_dad_joke' in content_lower or 'dad_joke' in content_lower:
+                return "dad_joke"
     
     return None
 
@@ -101,8 +105,8 @@ async def chat_endpoint(request: ChatRequest):
                     chunk = ChatStreamChunk(
                         content=word + (" " if not is_last else ""),
                         done=is_last,
-                        thread_id=thread_id if is_last else None,  # Only send thread_id on last chunk
-                        agent_type=agent_type if is_last else None  # Only send agent_type on last chunk
+                        thread_id=thread_id,  # Include in all chunks for consistency
+                        agent_type=agent_type  # Include in all chunks for consistency
                     )
                     yield f"data: {chunk.model_dump_json()}\n\n"
                 

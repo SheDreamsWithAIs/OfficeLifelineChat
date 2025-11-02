@@ -14,6 +14,7 @@ from app.llm.providers import get_routing_model  # Smaller model for routing
 from app.agents.policy_agent import get_policy_agent
 from app.agents.technical_agent import get_technical_agent
 from app.agents.billing_agent import get_billing_agent
+from app.agents.dad_joke_agent import get_dad_joke_agent
 from app.core.checkpointing import get_or_create_checkpointer
 
 
@@ -101,6 +102,32 @@ def handle_billing_query(query: str) -> str:
     return result["messages"][-1].content
 
 
+@tool
+def handle_dad_joke_request(query: str) -> str:
+    """
+    Handle requests for jokes, dad jokes, humor, or emotional support through comedy.
+    
+    Use this tool when users:
+    - Ask for a joke, dad joke, or something funny
+    - Request humor or need a mood lift
+    - Express stress, overwhelm, or need for levity
+    - Say things like "tell me a joke", "I need something funny", "make me laugh"
+    - Seem like they need emotional support through humor
+    
+    Args:
+        query: User's request for humor or joke
+        
+    Returns:
+        A contextually relevant dad joke from the dad joke specialist agent
+    """
+    dad_joke_agent = get_dad_joke_agent()
+    result = dad_joke_agent.invoke({
+        "messages": [{"role": "user", "content": query}]
+    })
+    # Return the final message content from the agent
+    return result["messages"][-1].content
+
+
 def create_orchestrator():
     """
     Create the orchestrator agent (supervisor).
@@ -117,7 +144,7 @@ def create_orchestrator():
     
     agent = create_agent(
         model=model,
-        tools=[handle_policy_query, handle_technical_query, handle_billing_query],
+        tools=[handle_policy_query, handle_technical_query, handle_billing_query, handle_dad_joke_request],
         system_prompt=(
             "You are an intelligent customer service orchestrator. "
             "Your role is to analyze user queries and route them to the appropriate "
@@ -125,10 +152,13 @@ def create_orchestrator():
             "Available specialist agents:\n"
             "1. handle_policy_query - For policy, compliance, terms of service, privacy policy questions\n"
             "2. handle_technical_query - For technical support, API, troubleshooting, setup questions\n"
-            "3. handle_billing_query - For billing, pricing, invoices, payment questions\n\n"
-            "IMPORTANT:\n"
-            "- Analyze the user's question carefully\n"
-            "- Choose the most appropriate specialist agent\n"
+            "3. handle_billing_query - For billing, pricing, invoices, payment questions\n"
+            "4. handle_dad_joke_request - For jokes, humor, emotional support, or when users need a mood lift\n\n"
+            "ROUTING RULES:\n"
+            "- If the user asks for a joke, dad joke, humor, or something funny → ALWAYS use handle_dad_joke_request\n"
+            "- If the user seems stressed, overwhelmed, or needs emotional support → use handle_dad_joke_request\n"
+            "- Keywords that indicate joke requests: 'joke', 'funny', 'humor', 'dad joke', 'make me laugh', 'something funny'\n"
+            "- For all other queries, analyze the content and route to the appropriate specialist\n"
             "- Call ONLY ONE agent per query\n"
             "- Return the agent's response directly to the user\n"
             "- Be concise in your routing decisions"
