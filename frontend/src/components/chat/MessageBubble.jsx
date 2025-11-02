@@ -123,7 +123,8 @@ function formatContentForMarkdown(content) {
 }
 
 export default function MessageBubble({ message }) {
-  const { sender, content, timestamp, agentType, isStreaming } = message
+  // Ensure sender is always defined with a default value
+  const { sender = 'ai', content, timestamp, agentType, isStreaming } = message || {}
   const agentInfo = getAgentInfo(agentType)
   
   // Format content synchronously to avoid hydration mismatch
