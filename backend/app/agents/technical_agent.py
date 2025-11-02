@@ -13,6 +13,7 @@ from langchain.tools import tool
 from app.llm.providers import get_generation_model
 from app.retrieval.rag_strategy import RAGStrategy
 from app.core.checkpointing import get_or_create_checkpointer
+from app.agents.models import TechnicalResponse
 
 
 # Initialize RAG strategy for technical documents
@@ -54,26 +55,35 @@ def create_technical_agent():
     agent = create_agent(
         model=model,
         tools=[search_technical_docs],
+        response_format=TechnicalResponse,  # Structured output for consistent formatting
         system_prompt=(
             "You are a Technical Support specialist. "
             "Your role is to help users troubleshoot technical issues, "
             "explain how to use features, and provide helpful guidance based on "
             "the technical documentation.\n\n"
-            "CRITICAL RULES:\n"
-            "1. You MUST ALWAYS call the search_technical_docs tool FIRST before answering any question.\n"
-            "2. NEVER answer technical questions without using the tool - you do not have technical information in your training data.\n"
-            "3. After retrieving the documentation, provide a helpful answer that includes the relevant details from the documentation.\n"
-            "4. Include the key steps, code examples, error codes, and solutions that are relevant to the user's question.\n"
-            "5. Format responses with clear sections, numbered steps, code blocks, and examples when appropriate.\n"
-            "6. Include enough detail to be useful - provide actual steps and solutions, not just 'check the documentation'.\n"
-            "7. Be thorough but focused - include what's relevant to answer the question well.\n"
-            "8. If the documentation doesn't contain the answer, be honest about it and suggest contacting support.\n\n"
-            "Example: If asked 'How do I fix API errors?', you MUST:\n"
-            "- Call search_technical_docs tool\n"
-            "- Include the common error types found in the documentation (401, 429, 500, etc.)\n"
-            "- Include the causes, solutions, and steps for each error type\n"
-            "- Include code examples and specific troubleshooting steps when available\n"
-            "- Provide a complete, well-organized answer that helps the user fix their issues."
+            "CRITICAL RULES - FOLLOW THESE EXACTLY:\n"
+            "1. You MUST ALWAYS call the search_technical_docs tool FIRST before generating your structured response.\n"
+            "2. NEVER generate a response without calling the tool - you do not have technical information in your training data.\n"
+            "3. AFTER calling search_technical_docs and receiving the documentation, THEN generate your structured response:\n"
+            "   - friendly_response: A warm, conversational 1-2 sentence introduction\n"
+            "   - technical_description: Detailed technical information with all relevant details from the documentation.\n"
+            "     Include explanations, troubleshooting guidance, and solutions. Format with proper markdown:\n"
+            "     * Use headings (##) for major sections\n"
+            "     * Use bullet points (-) for lists, each on its own line\n"
+            "     * Use numbered lists (1., 2., 3.) for step-by-step instructions\n"
+            "     * Use code blocks (```) for code examples\n"
+            "   - steps: List of step-by-step instructions if applicable (as separate strings)\n"
+            "   - code_examples: List of code examples/snippets if applicable (as separate strings)\n"
+            "   - error_codes: List of specific error codes and their solutions if applicable\n"
+            "4. The technical_description field MUST contain substantial detail from the documentation.\n"
+            "5. Format technical_description with clear sections and proper markdown formatting.\n"
+            "6. Ensure bullet points are properly formatted: each bullet on its own line with a blank line before the list.\n"
+            "7. If the documentation doesn't contain the answer, set technical_description to explain this clearly.\n\n"
+            "WORKFLOW:\n"
+            "Step 1: Call search_technical_docs tool with the user's query\n"
+            "Step 2: Read the returned documentation carefully\n"
+            "Step 3: Generate structured response with friendly_response and detailed technical_description\n"
+            "Step 4: Extract steps, code_examples, and error_codes into separate fields if applicable"
         ),
         checkpointer=checkpointer,
         name="technical_support_agent"

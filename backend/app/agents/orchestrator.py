@@ -15,7 +15,7 @@ from app.agents.policy_agent import get_policy_agent
 from app.agents.technical_agent import get_technical_agent
 from app.agents.billing_agent import get_billing_agent
 from app.agents.dad_joke_agent import get_dad_joke_agent
-from app.agents.models import PolicyResponse
+from app.agents.models import PolicyResponse, TechnicalResponse, BillingResponse
 from app.core.checkpointing import get_or_create_checkpointer
 from app.core.logging_config import get_logger, log_dict_keys, log_truncated
 
@@ -36,6 +36,48 @@ def _format_policy_response(structured_response: PolicyResponse) -> str:
             parts.append(f"\n- {point}")
     if structured_response.contact_info:
         parts.append(f"\n\n**Contact:** {structured_response.contact_info}")
+    return "".join(parts)
+
+
+def _format_technical_response(structured_response: TechnicalResponse) -> str:
+    """Format TechnicalResponse structured output into readable markdown."""
+    parts = []
+    if structured_response.friendly_response:
+        parts.append(structured_response.friendly_response)
+    if structured_response.technical_description:
+        parts.append("\n\n" + structured_response.technical_description)
+    if structured_response.steps:
+        parts.append("\n\n**Steps:**")
+        for i, step in enumerate(structured_response.steps, 1):
+            parts.append(f"\n{i}. {step}")
+    if structured_response.code_examples:
+        parts.append("\n\n**Code Examples:**")
+        for example in structured_response.code_examples:
+            parts.append(f"\n```\n{example}\n```")
+    if structured_response.error_codes:
+        parts.append("\n\n**Error Codes:**")
+        for error in structured_response.error_codes:
+            parts.append(f"\n- {error}")
+    return "".join(parts)
+
+
+def _format_billing_response(structured_response: BillingResponse) -> str:
+    """Format BillingResponse structured output into readable markdown."""
+    parts = []
+    if structured_response.friendly_response:
+        parts.append(structured_response.friendly_response)
+    if structured_response.billing_description:
+        parts.append("\n\n" + structured_response.billing_description)
+    if structured_response.plans:
+        parts.append("\n\n**Available Plans:**")
+        for plan in structured_response.plans:
+            if isinstance(plan, dict):
+                plan_str = "\n".join(f"- {k}: {v}" for k, v in plan.items())
+                parts.append(f"\n{plan_str}")
+            else:
+                parts.append(f"\n- {plan}")
+    if structured_response.payment_info:
+        parts.append(f"\n\n**Payment Information:**\n{structured_response.payment_info}")
     return "".join(parts)
 
 
@@ -135,11 +177,22 @@ def handle_technical_query(query: str) -> str:
     Returns:
         Complete answer from the technical support specialist agent
     """
+    logger.info(f"Orchestrator Tool: handle_technical_query called with query=\"{query}\"")
     technical_agent = get_technical_agent()
     result = technical_agent.invoke({
         "messages": [{"role": "user", "content": query}]
     })
-    # Return the final message content from the agent
+    
+    # Check for structured response first
+    if "structured_response" in result and result["structured_response"]:
+        structured_response = result["structured_response"]
+        if isinstance(structured_response, TechnicalResponse):
+            formatted = _format_technical_response(structured_response)
+            if formatted.strip():
+                logger.info("Orchestrator Tool: Returning formatted technical structured response")
+                return formatted
+    
+    # Fallback to message content
     return result["messages"][-1].content
 
 
@@ -165,11 +218,22 @@ def handle_billing_query(query: str) -> str:
     Returns:
         Complete answer from the billing support specialist agent
     """
+    logger.info(f"Orchestrator Tool: handle_billing_query called with query=\"{query}\"")
     billing_agent = get_billing_agent()
     result = billing_agent.invoke({
         "messages": [{"role": "user", "content": query}]
     })
-    # Return the final message content from the agent
+    
+    # Check for structured response first
+    if "structured_response" in result and result["structured_response"]:
+        structured_response = result["structured_response"]
+        if isinstance(structured_response, BillingResponse):
+            formatted = _format_billing_response(structured_response)
+            if formatted.strip():
+                logger.info("Orchestrator Tool: Returning formatted billing structured response")
+                return formatted
+    
+    # Fallback to message content
     return result["messages"][-1].content
 
 
