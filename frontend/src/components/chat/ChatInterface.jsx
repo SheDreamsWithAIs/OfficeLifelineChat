@@ -14,20 +14,27 @@ const WELCOME_MESSAGE = {
 }
 
 export default function ChatInterface() {
-  // Load messages and thread_id from localStorage on mount
-  const [messages, setMessages] = useState(() => {
+  // Always start with welcome message to ensure server/client match
+  // Then load from localStorage after mount
+  const [messages, setMessages] = useState([WELCOME_MESSAGE])
+  
+  // Load messages from localStorage after mount (client-side only)
+  useEffect(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('chat_messages')
       if (saved) {
         try {
-          return JSON.parse(saved)
+          const parsedMessages = JSON.parse(saved)
+          // Only restore if we have actual messages (not just welcome)
+          if (parsedMessages && parsedMessages.length > 0) {
+            setMessages(parsedMessages)
+          }
         } catch (e) {
           console.error('Failed to parse saved messages:', e)
         }
       }
     }
-    return [WELCOME_MESSAGE]
-  })
+  }, []) // Run only once on mount
   
   const [inputMessage, setInputMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
