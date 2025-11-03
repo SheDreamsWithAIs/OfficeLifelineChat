@@ -14,10 +14,31 @@ from app.llm.providers import get_routing_model  # Smaller model for routing
 from app.agents.policy_agent import get_policy_agent
 from app.agents.technical_agent import get_technical_agent
 from app.agents.billing_agent import get_billing_agent
+from app.agents.dad_joke_agent import get_dad_joke_agent
+from app.agents.models import PolicyResponse
 from app.core.checkpointing import get_or_create_checkpointer
+from app.core.logging_config import get_logger, log_dict_keys, log_truncated
+
+logger = get_logger("orchestrator")
 
 
 # Wrap worker agents as tools for the supervisor
+def _format_policy_response(structured_response: PolicyResponse) -> str:
+    """Format PolicyResponse structured output into readable markdown."""
+    parts = []
+    if structured_response.friendly_response:
+        parts.append(structured_response.friendly_response)
+    if structured_response.policy_description:
+        parts.append("\n\n" + structured_response.policy_description)
+    if structured_response.key_points:
+        parts.append("\n\n**Key Points:**")
+        for point in structured_response.key_points:
+            parts.append(f"\n- {point}")
+    if structured_response.contact_info:
+        parts.append(f"\n\n**Contact:** {structured_response.contact_info}")
+    return "".join(parts)
+
+
 @tool
 def handle_policy_query(query: str) -> str:
     """
@@ -37,11 +58,60 @@ def handle_policy_query(query: str) -> str:
     Returns:
         Complete answer from the policy specialist agent
     """
+    logger.info(f"Orchestrator Tool: handle_policy_query called with query=\"{query}\"")
     policy_agent = get_policy_agent()
+    
+    logger.info(f"Policy Agent: Invoking with messages=[{{\"role\": \"user\", \"content\": \"{query}\"}}]")
     result = policy_agent.invoke({
         "messages": [{"role": "user", "content": query}]
     })
-    # Return the final message content from the agent
+    
+    # Log result structure
+    log_dict_keys(logger, result, prefix="Policy Agent: ")
+    
+    # Check for structured response first
+    has_structured = "structured_response" in result and result["structured_response"]
+    logger.info(f"Policy Agent: structured_response present={has_structured}")
+    
+    if has_structured:
+        structured_response = result["structured_response"]
+        logger.info(f"Policy Agent: structured_response type={type(structured_response)}")
+        
+        if isinstance(structured_response, PolicyResponse):
+            logger.info("Orchestrator Tool: structured_response is PolicyResponse instance")
+            logger.info(f"Orchestrator Tool: structured_response.friendly_response=\"{structured_response.friendly_response}\"")
+            logger.info(f"Orchestrator Tool: structured_response.policy_description length={len(structured_response.policy_description)}")
+            log_truncated(logger, structured_response.policy_description, prefix="Orchestrator Tool: policy_description preview: ", max_chars=200)
+            if structured_response.key_points:
+                logger.info(f"Orchestrator Tool: structured_response.key_points={structured_response.key_points}")
+            if structured_response.contact_info:
+                logger.info(f"Orchestrator Tool: structured_response.contact_info=\"{structured_response.contact_info}\"")
+            
+            formatted = _format_policy_response(structured_response)
+            logger.info(f"Orchestrator Tool: Formatted response length={len(formatted)} chars")
+            log_truncated(logger, formatted, prefix="Orchestrator Tool: Formatted response preview: ", max_chars=200)
+            
+            # Ensure we actually have content (not just empty fields)
+            if formatted.strip():
+                logger.info("Orchestrator Tool: Returning formatted structured response")
+                return formatted
+            else:
+                logger.warning("Orchestrator Tool: Formatted response is empty, falling back to message content")
+        else:
+            logger.warning(f"Orchestrator Tool: structured_response is not PolicyResponse, got {type(structured_response)}")
+    else:
+        logger.info("Orchestrator Tool: No structured_response found, using message content")
+    
+    # Fallback to message content
+    final_message = result["messages"][-1]
+    logger.info(f"Orchestrator Tool: Using fallback message content, type={type(final_message)}")
+    if hasattr(final_message, 'content'):
+        content = final_message.content
+        logger.info(f"Orchestrator Tool: Message content length={len(str(content))} chars")
+        log_truncated(logger, content, prefix="Orchestrator Tool: Message content preview: ", max_chars=200)
+    else:
+        logger.warning(f"Orchestrator Tool: Final message has no content attribute: {final_message}")
+    
     return result["messages"][-1].content
 
 
@@ -65,11 +135,25 @@ def handle_technical_query(query: str) -> str:
     Returns:
         Complete answer from the technical support specialist agent
     """
+    logger.info(f"Orchestrator Tool: handle_technical_query called with query=\"{query}\"")
     technical_agent = get_technical_agent()
+    
+    logger.info(f"Technical Agent: Invoking with messages=[{{\"role\": \"user\", \"content\": \"{query}\"}}]")
     result = technical_agent.invoke({
         "messages": [{"role": "user", "content": query}]
     })
+    
+    # Log result structure
+    log_dict_keys(logger, result, prefix="Technical Agent: ")
+    
     # Return the final message content from the agent
+    final_message = result["messages"][-1]
+    logger.info(f"Technical Agent: Returning message content, type={type(final_message)}")
+    if hasattr(final_message, 'content'):
+        content = final_message.content
+        logger.info(f"Technical Agent: Message content length={len(str(content))} chars")
+        log_truncated(logger, content, prefix="Technical Agent: Message content preview: ", max_chars=200)
+    
     return result["messages"][-1].content
 
 
@@ -79,13 +163,15 @@ def handle_billing_query(query: str) -> str:
     Handle billing, pricing, invoices, and payment questions.
     
     Use this tool when users ask about:
-    - Pricing and plans
-    - Invoice questions
-    - Payment methods
-    - Billing cycles
-    - Refunds and cancellations
-    - Account billing history
-    - Subscription management
+    - Pricing and plans (e.g., "what are your pricing plans", "how much does it cost", "pricing")
+    - Invoice questions (e.g., "invoice", "billing statement")
+    - Payment methods (e.g., "how do I pay", "payment options")
+    - Billing cycles (e.g., "when am I billed", "billing frequency")
+    - Refunds and cancellations (e.g., "refund", "cancel subscription")
+    - Account billing history (e.g., "billing history", "past invoices")
+    - Subscription management (e.g., "change plan", "upgrade", "downgrade")
+    
+    Keywords that indicate billing: pricing, price, cost, plan, payment, invoice, billing, subscription, refund, cancel, upgrade, downgrade
     
     Args:
         query: User's billing question
@@ -93,8 +179,53 @@ def handle_billing_query(query: str) -> str:
     Returns:
         Complete answer from the billing support specialist agent
     """
+    logger.info(f"Orchestrator Tool: handle_billing_query called with query=\"{query}\"")
     billing_agent = get_billing_agent()
+    
+    logger.info(f"Billing Agent: Invoking with messages=[{{\"role\": \"user\", \"content\": \"{query}\"}}]")
     result = billing_agent.invoke({
+        "messages": [{"role": "user", "content": query}]
+    })
+    
+    # Log result structure
+    log_dict_keys(logger, result, prefix="Billing Agent: ")
+    
+    # Return the final message content from the agent
+    final_message = result["messages"][-1]
+    logger.info(f"Billing Agent: Returning message content, type={type(final_message)}")
+    if hasattr(final_message, 'content'):
+        content = final_message.content
+        logger.info(f"Billing Agent: Message content length={len(str(content))} chars")
+        log_truncated(logger, content, prefix="Billing Agent: Message content preview: ", max_chars=200)
+    
+    return result["messages"][-1].content
+
+
+@tool
+def handle_dad_joke_request(query: str) -> str:
+    """
+    Handle EXPLICIT requests for jokes, dad jokes, or humor.
+    
+    Use this tool ONLY when users EXPLICITLY request humor:
+    - Directly ask for a joke: "tell me a joke", "give me a dad joke", "make me laugh", "tell me something funny"
+    - Use humor-related keywords: "joke", "funny", "humor", "dad joke", "something funny", "cheer me up"
+    - Explicitly request emotional support through comedy: "I need a joke", "cheer me up with a joke"
+    
+    Keywords that indicate joke requests: joke, jokes, funny, humor, humour, laugh, dad joke, cheer me up, make me laugh
+    
+    DO NOT use this tool for:
+    - General questions even if user seems stressed (they might want actual help)
+    - Technical, billing, or policy questions (route to appropriate specialist)
+    - Questions that don't explicitly mention jokes or humor
+    
+    Args:
+        query: User's EXPLICIT request for humor or joke
+        
+    Returns:
+        A contextually relevant dad joke from the dad joke specialist agent
+    """
+    dad_joke_agent = get_dad_joke_agent()
+    result = dad_joke_agent.invoke({
         "messages": [{"role": "user", "content": query}]
     })
     # Return the final message content from the agent
@@ -117,21 +248,37 @@ def create_orchestrator():
     
     agent = create_agent(
         model=model,
-        tools=[handle_policy_query, handle_technical_query, handle_billing_query],
+        tools=[handle_policy_query, handle_technical_query, handle_billing_query, handle_dad_joke_request],
         system_prompt=(
             "You are an intelligent customer service orchestrator. "
-            "Your role is to analyze user queries and route them to the appropriate "
-            "specialist agent.\n\n"
-            "Available specialist agents:\n"
+            "Your role is to analyze EACH user query independently and route it to the appropriate "
+            "specialist agent by CALLING THE APPROPRIATE TOOL.\n\n"
+            "Available specialist agents (TOOLS YOU MUST CALL):\n"
             "1. handle_policy_query - For policy, compliance, terms of service, privacy policy questions\n"
             "2. handle_technical_query - For technical support, API, troubleshooting, setup questions\n"
-            "3. handle_billing_query - For billing, pricing, invoices, payment questions\n\n"
-            "IMPORTANT:\n"
-            "- Analyze the user's question carefully\n"
-            "- Choose the most appropriate specialist agent\n"
-            "- Call ONLY ONE agent per query\n"
-            "- Return the agent's response directly to the user\n"
-            "- Be concise in your routing decisions"
+            "3. handle_billing_query - For billing, pricing, invoices, payment questions\n"
+            "4. handle_dad_joke_request - ONLY for EXPLICIT requests for jokes, humor, or dad jokes\n\n"
+            "CRITICAL ROUTING RULES:\n"
+            "- You MUST ALWAYS call one of the tools above - NEVER respond without calling a tool\n"
+            "- DO NOT say 'I have routed' or 'I will route' - just CALL the tool\n"
+            "- After calling a tool, RETURN THE TOOL'S RESPONSE VERBATIM - do NOT summarize, paraphrase, or add commentary\n"
+            "- The tool response IS your final answer - return it exactly as provided\n"
+            "- Evaluate EACH query independently - do NOT assume the previous query determines the current one\n\n"
+            "ROUTING DECISION LOGIC (in priority order):\n"
+            "1. If query contains joke/humor keywords ('joke', 'funny', 'humor', 'laugh', 'dad joke') → handle_dad_joke_request\n"
+            "2. If query contains billing keywords ('pricing', 'price', 'cost', 'plan', 'payment', 'invoice', 'billing', 'subscription', 'refund', 'cancel') → handle_billing_query\n"
+            "3. If query contains policy keywords ('privacy policy', 'terms of service', 'policy', 'compliance', 'terms') → handle_policy_query\n"
+            "4. If query contains technical keywords ('API', 'error', 'bug', 'troubleshoot', 'fix', 'how to', 'technical', 'setup', 'configuration') → handle_technical_query\n"
+            "5. For general questions without specific keywords, use handle_technical_query as default\n\n"
+            "EXAMPLES:\n"
+            "- 'tell me a joke' → handle_dad_joke_request\n"
+            "- 'what are your pricing plans' → handle_billing_query\n"
+            "- 'what is your privacy policy' → handle_policy_query\n"
+            "- 'how do I fix API errors' → handle_technical_query\n\n"
+            "- Call ONLY ONE tool per query\n"
+            "- After calling a tool, return the tool's response DIRECTLY to the user as-is\n"
+            "- DO NOT add your own commentary - just return what the tool returned\n"
+            "- Be precise: each new query should be evaluated on its own merits, not based on conversation history"
         ),
         checkpointer=checkpointer,
         name="orchestrator_agent"
@@ -148,11 +295,15 @@ def get_orchestrator():
     """
     Get or create the global orchestrator instance.
     
+    For development: recreates the agent each time to pick up prompt changes.
+    In production, you might want to cache this.
+    
     Returns:
         Orchestrator agent instance
     """
     global _orchestrator
-    if _orchestrator is None:
-        _orchestrator = create_orchestrator()
+    # Recreate for development to pick up prompt/routing changes
+    # In production, you might want: if _orchestrator is None:
+    _orchestrator = create_orchestrator()
     return _orchestrator
 

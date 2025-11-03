@@ -62,13 +62,18 @@ class HybridRAGCAGStrategy:
         
         # First call: Perform RAG retrieval
         print(f"[Hybrid Strategy] Performing RAG retrieval (first call)")
-        chunks = self.rag_strategy.retrieve(query, k=k, filter=filter)
-        
-        # Cache results in session
-        session_cache[cache_key] = chunks
-        print(f"[Hybrid Strategy] Cached {len(chunks)} chunks for future use")
-        
-        return chunks
+        try:
+            chunks = self.rag_strategy.retrieve(query, k=k, filter=filter)
+            
+            # Cache results in session
+            session_cache[cache_key] = chunks
+            print(f"[Hybrid Strategy] Cached {len(chunks)} chunks for future use")
+            
+            return chunks
+        except Exception as e:
+            # Handle case where collection doesn't exist or is corrupted
+            print(f"[Hybrid Strategy] Warning: Error retrieving from collection '{self.collection_name}': {e}")
+            return []
     
     def get_context(
         self,
