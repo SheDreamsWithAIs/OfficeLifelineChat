@@ -65,3 +65,8 @@ logs/
 .coverage
 htmlcov/
 
+#AI Docs
+AI_docs/
+
+#cursor
+.cursor/

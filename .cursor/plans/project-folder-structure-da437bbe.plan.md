@@ -167,6 +167,8 @@ Both `.env.example` (root) and `.env.local` (frontend) should include:
 - [ ] `.gitignore` excludes `.env`, `chroma_db/`, `node_modules/`, `__pycache__/`
 - [ ] Repository initialized
 
+**Commit**: `[Phase 1 Step 1.1] Initialize project structure and directories`
+
 ### Step 1.2: Backend Python Environment
 
 - Create `backend/requirements.txt` with initial dependencies
@@ -178,7 +180,10 @@ Both `.env.example` (root) and `.env.local` (frontend) should include:
 
 - [ ] Virtual environment activates successfully
 - [ ] All packages install without errors
+- [ ] LangChain and LangGraph v1.0.0+ installed (verify versions)
 - [ ] Python version compatible (3.9+)
+
+**Commit**: `[Phase 1 Step 1.2] Setup Python environment and dependencies`
 
 ### Step 1.3: Backend Core Configuration
 
@@ -192,6 +197,8 @@ Both `.env.example` (root) and `.env.local` (frontend) should include:
 - [ ] Can access config values (test with print statements)
 - [ ] Error handling for missing required vars
 
+**Commit**: `[Phase 1 Step 1.3] Create backend configuration management`
+
 ### Step 1.4: Mock Data Preparation
 
 - Create `data/` folder structure
@@ -203,6 +210,8 @@ Both `.env.example` (root) and `.env.local` (frontend) should include:
 - [ ] Sample documents exist in each category
 - [ ] Documents are readable and formatted correctly
 - [ ] At least 2-3 documents per category minimum
+
+**Commit**: `[Phase 1 Step 1.4] Create mock data documents for all domains`
 
 ---
 
